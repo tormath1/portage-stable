@@ -54,6 +54,71 @@ user_get_nologin() {
 	echo "${eshell}"
 }
 
+# Small wrapper for getent (Linux), nidump (< Mac OS X 10.5),
+# dscl (Mac OS X 10.5), and pw (FreeBSD) used in enewuser()/enewgroup().
+#
+# Supported databases: group passwd
+egetent() {
+	local db=$1 key=$2
+
+	[[ $# -ge 3 ]] && die "usage: egetent <database> <key>"
+
+	case ${db} in
+	passwd|group) ;;
+	*) die "sorry, database '${db}' not yet supported; file a bug" ;;
+	esac
+
+	case ${CHOST} in
+	*-freebsd*|*-dragonfly*)
+		case ${db} in
+		passwd) db="user" ;;
+		*) ;;
+		esac
+
+		# lookup by uid/gid
+		local opts
+		if [[ ${key} == [[:digit:]]* ]] ; then
+			[[ ${db} == "user" ]] && opts="-u" || opts="-g"
+		fi
+
+		pw show ${db} ${opts} "${key}" -q
+		;;
+	*-openbsd*)
+		grep "${key}:\*:" /etc/${db}
+		;;
+	*)
+		# ignore nscd output if we're not running as root
+		type -p nscd >/dev/null && nscd -i "${db}" 2>/dev/null
+		getent "${db}" "${key}"
+		;;
+	esac
+}
+
+# @FUNCTION: user_get_nologin
+# @INTERNAL
+# @DESCRIPTION:
+# Find an appropriate 'nologin' shell for the platform, and output
+# its path.
+user_get_nologin() {
+	local eshell
+
+	for eshell in /sbin/nologin /usr/sbin/nologin /bin/false /usr/bin/false /dev/null ; do
+		[[ -x ${ROOT}${eshell} ]] && break
+	done
+
+	if [[ ${eshell} == "/dev/null" ]] ; then
+		ewarn "Unable to identify the shell to use, proceeding with userland default."
+		case ${USERLAND} in
+			GNU)    eshell="/bin/false" ;;
+			BSD)    eshell="/sbin/nologin" ;;
+			Darwin) eshell="/usr/sbin/nologin" ;;
+			*) die "Unable to identify the default shell for userland ${USERLAND}"
+		esac
+	fi
+
+	echo "${eshell}"
+}
+
 # @FUNCTION: enewuser
 # @USAGE: <user> [-F] [-M] [uid] [shell] [homedir] [groups]
 # @DESCRIPTION:
@@ -308,6 +373,108 @@ enewgroup() {
 		groupadd -r ${opts} "${egroup}" || die
 		;;
 	esac
+}
+
+# @FUNCTION: egetusername
+# @USAGE: <uid>
+# @DESCRIPTION:
+# Gets the username for given UID.
+egetusername() {
+	[[ $# -eq 1 ]] || die "usage: egetusername <uid>"
+
+	egetent passwd "$1" | cut -d: -f1
+}
+
+# @FUNCTION: egetgroupname
+# @USAGE: <gid>
+# @DESCRIPTION:
+# Gets the group name for given GID.
+egetgroupname() {
+	[[ $# -eq 1 ]] || die "usage: egetgroupname <gid>"
+
+	egetent group "$1" | cut -d: -f1
+}
+
+# @FUNCTION: egethome
+# @USAGE: <user>
+# @DESCRIPTION:
+# Gets the home directory for the specified user.
+egethome() {
+	local pos
+
+	[[ $# -eq 1 ]] || die "usage: egethome <user>"
+
+	case ${CHOST} in
+	*-freebsd*|*-dragonfly*)
+		pos=9
+		;;
+	*)	# Linux, NetBSD, OpenBSD, etc...
+		pos=6
+		;;
+	esac
+
+	egetent passwd "$1" | cut -d: -f${pos}
+}
+
+# @FUNCTION: egetshell
+# @USAGE: <user>
+# @DESCRIPTION:
+# Gets the shell for the specified user.
+egetshell() {
+	local pos
+
+	[[ $# -eq 1 ]] || die "usage: egetshell <user>"
+
+	case ${CHOST} in
+	*-freebsd*|*-dragonfly*)
+		pos=10
+		;;
+	*)	# Linux, NetBSD, OpenBSD, etc...
+		pos=7
+		;;
+	esac
+
+	egetent passwd "$1" | cut -d: -f${pos}
+}
+
+# @FUNCTION: egetcomment
+# @USAGE: <user>
+# @DESCRIPTION:
+# Gets the comment field for the specified user.
+egetcomment() {
+	local pos
+
+	[[ $# -eq 1 ]] || die "usage: egetshell <user>"
+
+	case ${CHOST} in
+	*-freebsd*|*-dragonfly*)
+		pos=8
+		;;
+	*)	# Linux, NetBSD, OpenBSD, etc...
+		pos=5
+		;;
+	esac
+
+	egetent passwd "$1" | cut -d: -f${pos}
+}
+
+# @FUNCTION: egetgroups
+# @USAGE: <user>
+# @DESCRIPTION:
+# Gets all the groups user belongs to.  The primary group is returned
+# first, then all supplementary groups.  Groups are ','-separated.
+egetgroups() {
+	[[ $# -eq 1 ]] || die "usage: egetgroups <user>"
+
+	local egroups_arr
+	read -r -a egroups_arr < <(id -G -n "$1")
+
+	local g groups=${egroups_arr[0]}
+	# sort supplementary groups to make comparison possible
+	while read -r g; do
+		[[ -n ${g} ]] && groups+=",${g}"
+	done < <(printf '%s\n' "${egroups_arr[@]:1}" | sort)
+	echo "${groups}"
 }
 
 # @FUNCTION: esethome
