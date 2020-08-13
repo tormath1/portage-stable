@@ -62,6 +62,15 @@ src_prepare() {
 		-i hack/get_release_info.sh || die
 }
 
+src_configure() {
+	# Avoid this error when generating pkg/varlink/iopodman.go:
+	# cannot find package "github.com/varlink/go/varlink/idl"
+	mkdir _output || die
+	ln -snf ../vendor _output/src || die
+	GO111MODULE=off GOPATH=${PWD}/_output go generate ./pkg/varlink/... || die
+	rm _output/src || die
+}
+
 src_compile() {
 	# Filter unsupported linker flags
 	filter-flags '-Wl,*'
@@ -87,13 +96,6 @@ src_compile() {
 	else
 		echo -e "#!/bin/sh\ntrue" > hack/selinux_tag.sh || die
 	fi
-
-	# Avoid this error when generating pkg/varlink/iopodman.go:
-	# cannot find package "github.com/varlink/go/varlink/idl"
-	mkdir -p _output || die
-	ln -snf ../vendor _output/src || die
-	GO111MODULE=off GOPATH=${PWD}/_output go generate ./pkg/varlink/... || die
-	rm _output/src || die
 
 	export -n GOCACHE GOPATH XDG_CACHE_HOME
 	GOBIN="${S}/bin" \
