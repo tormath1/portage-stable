@@ -1,20 +1,19 @@
-# Copyright 1999-2014 Gentoo Foundation
+# Copyright 1999-2020 Gentoo Authors
 # Distributed under the terms of the GNU General Public License v2
-# $Header: /var/cvsroot/gentoo-x86/sys-apps/kbd/kbd-2.0.2.ebuild,v 1.1 2014/08/01 10:35:43 vapier Exp $
 
-EAPI=5
+EAPI="5"
 
 SCM=""
 if [[ ${PV} == "9999" ]] ; then
-	SCM="git-r3"
-	EGIT_REPO_URI="http://git.kernel.org/cgit/linux/kernel/git/legion/${PN}.git"
+	SCM="autotools git-r3"
+	EGIT_REPO_URI="https://git.kernel.org/cgit/linux/kernel/git/legion/${PN}.git"
 	EGIT_BRANCH="master"
 else
-	SRC_URI="ftp://ftp.kernel.org/pub/linux/utils/kbd/${P}.tar.xz"
-	KEYWORDS="~alpha ~amd64 ~arm ~arm64 ~hppa ~ia64 ~m68k ~mips ~ppc ~ppc64 ~s390 ~sh ~sparc ~x86"
+	SRC_URI="https://www.kernel.org/pub/linux/utils/kbd/${P}.tar.xz"
+	KEYWORDS="~alpha amd64 arm arm64 hppa ~ia64 ~m68k ~mips ppc ppc64 ~riscv s390 sparc x86"
 fi
 
-inherit autotools eutils ${SCM}
+inherit eutils ${SCM}
 
 DESCRIPTION="Keyboard and console utilities"
 HOMEPAGE="http://kbd-project.org/"
@@ -22,8 +21,10 @@ HOMEPAGE="http://kbd-project.org/"
 LICENSE="GPL-2"
 SLOT="0"
 IUSE="nls pam test"
+RESTRICT="!test? ( test )"
 
-RDEPEND="pam? ( virtual/pam )"
+RDEPEND="pam? ( sys-libs/pam )
+	app-arch/gzip"
 DEPEND="${RDEPEND}
 	virtual/pkgconfig
 	test? ( dev-libs/check )"
@@ -45,8 +46,9 @@ src_unpack() {
 }
 
 src_prepare() {
-	epatch "${FILESDIR}"/${PN}-2.0.0-tests.patch
-	eautoreconf
+	if [[ ${PV} == "9999" ]] ; then
+		eautoreconf
+	fi
 }
 
 src_configure() {

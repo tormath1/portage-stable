@@ -3,7 +3,7 @@
 
 EAPI=7
 
-inherit pam
+inherit autotools pam
 
 if [[ ${PV} == "9999" ]] ; then
 	inherit autotools git-r3
@@ -11,13 +11,8 @@ if [[ ${PV} == "9999" ]] ; then
 	EGIT_REPO_URI="https://github.com/legionus/kbd.git"
 	EGIT_BRANCH="master"
 else
-	if [[ $(ver_cut 3) -lt 90 ]] ; then
-		SRC_URI="https://www.kernel.org/pub/linux/utils/kbd/${P}.tar.xz"
-		KEYWORDS="~alpha ~amd64 ~arm ~arm64 ~hppa ~ia64 ~m68k ~mips ~ppc ~ppc64 ~riscv ~s390 ~sparc ~x86"
-	else
-		inherit autotools
-		SRC_URI="https://github.com/legionus/kbd/archive/v${PV}.tar.gz -> ${P}.tar.gz"
-	fi
+	SRC_URI="https://www.kernel.org/pub/linux/utils/kbd/${P}.tar.xz"
+	KEYWORDS="~alpha amd64 arm arm64 ~hppa ~ia64 ~m68k ~mips ppc ppc64 ~riscv ~s390 sparc x86"
 fi
 
 DESCRIPTION="Keyboard and console utilities"
@@ -26,9 +21,7 @@ HOMEPAGE="http://kbd-project.org/"
 LICENSE="GPL-2"
 SLOT="0"
 IUSE="nls pam test"
-#RESTRICT="!test? ( test )"
-# Upstream has strange assumptions how to run tests (see bug #732868)
-RESTRICT="test"
+RESTRICT="!test? ( test )"
 
 RDEPEND="
 	app-arch/gzip
@@ -42,6 +35,11 @@ BDEPEND="
 	virtual/pkgconfig
 	test? ( dev-libs/check )
 "
+
+PATCHES=(
+	"${FILESDIR}/${P}-cflags.patch" #691142
+	"${FILESDIR}/${P}-kbdfile-dont_stop_on_first_error.patch"
+)
 
 src_unpack() {
 	if [[ ${PV} == "9999" ]] ; then
@@ -60,15 +58,11 @@ src_unpack() {
 
 src_prepare() {
 	default
-	if [[ ${PV} == "9999" ]] || [[ $(ver_cut 3) -ge 90 ]] ; then
-		eautoreconf
-	fi
+	eautoreconf
 }
 
 src_configure() {
 	local myeconfargs=(
-		# USE="test" installs .a files
-		--disable-static
 		$(use_enable nls)
 		$(use_enable pam vlock)
 		$(use_enable test tests)
@@ -81,7 +75,4 @@ src_install() {
 	docinto html
 	dodoc docs/doc/*.html
 	use pam && pamd_mimic_system vlock auth account
-
-	# USE="test" installs .la files
-	find "${ED}" -type f -name "*.la" -delete || die
 }
