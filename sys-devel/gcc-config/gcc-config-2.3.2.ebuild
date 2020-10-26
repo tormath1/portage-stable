@@ -10,14 +10,14 @@ if [[ ${PV} == 9999 ]]; then
 	inherit git-r3
 else
 	SRC_URI="https://dev.gentoo.org/~slyfox/distfiles/${P}.tar.xz"
-	KEYWORDS="~alpha ~amd64 ~arm ~arm64 ~hppa ~ia64 ~m68k ~mips ~ppc ~ppc64 ~riscv ~s390 ~sparc ~x86"
+	KEYWORDS="~alpha amd64 arm arm64 hppa ~ia64 ~m68k ~mips ppc ppc64 ~riscv s390 sparc x86"
 fi
 
 DESCRIPTION="Utility to manage compilers"
 HOMEPAGE="https://gitweb.gentoo.org/proj/gcc-config.git/"
 LICENSE="GPL-2"
 SLOT="0"
-IUSE="+cc-wrappers +native-symlinks"
+IUSE="+native-symlinks"
 
 RDEPEND=">=sys-apps/gentoo-functions-0.10"
 
@@ -25,7 +25,6 @@ _emake() {
 	emake \
 		PV="${PV}" \
 		SUBLIBDIR="$(get_libdir)" \
-		USE_CC_WRAPPERS="$(usex cc-wrappers)" \
 		USE_NATIVE_LINKS="$(usex native-symlinks)" \
 		TOOLCHAIN_PREFIX="${CHOST}-" \
 		"$@"
