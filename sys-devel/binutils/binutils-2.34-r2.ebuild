@@ -1,14 +1,15 @@
-# Copyright 1999-2018 Gentoo Authors
+# Copyright 1999-2020 Gentoo Authors
 # Distributed under the terms of the GNU General Public License v2
 
-EAPI=6
+EAPI=7
 
-inherit eutils libtool flag-o-matic gnuconfig multilib versionator
+inherit eutils libtool flag-o-matic gnuconfig multilib toolchain-funcs
 
 DESCRIPTION="Tools necessary to build programs"
 HOMEPAGE="https://sourceware.org/binutils/"
 LICENSE="GPL-3+"
-IUSE="+cxx doc multitarget +nls static-libs test"
+IUSE="default-gold doc +gold multitarget +nls +plugins static-libs test"
+REQUIRED_USE="default-gold? ( gold )"
 
 # Variables that can be set here:
 # PATCH_VER          - the patchset version
@@ -17,30 +18,29 @@ IUSE="+cxx doc multitarget +nls static-libs test"
 #                    - Default: PV
 # PATCH_DEV          - Use download URI https://dev.gentoo.org/~{PATCH_DEV}/distfiles/...
 #                      for the patchsets
-#                      Default: dilfridge :)
 
-PATCH_VER=5
+PATCH_VER=6
+PATCH_DEV=dilfridge
 
 case ${PV} in
 	9999)
-		BVER="git"
 		EGIT_REPO_URI="https://sourceware.org/git/binutils-gdb.git"
 		inherit git-r3
 		S=${WORKDIR}/binutils
 		EGIT_CHECKOUT_DIR=${S}
+		SLOT=${PV}
 		;;
 	*)
-		BVER=${PV}
-		SRC_URI="mirror://gnu/binutils/binutils-${BVER}.tar.xz https://sourceware.org/pub/binutils/releases/binutils-${BVER}.tar.xz"
+		SRC_URI="mirror://gnu/binutils/binutils-${PV}.tar.xz"
+		SLOT=$(ver_cut 1-2)
+		KEYWORDS="~alpha amd64 arm arm64 ~hppa ~ia64 ~m68k ~mips ~ppc ~ppc64 ~riscv ~s390 sparc x86"
 		;;
 esac
-SLOT="${BVER}"
-KEYWORDS="alpha amd64 arm arm64 hppa ia64 m68k ~mips ppc ppc64 s390 sh sparc x86 ~amd64-fbsd ~x86-fbsd"
 
 #
 # The Gentoo patchset
 #
-PATCH_BINUTILS_VER=${PATCH_BINUTILS_VER:-${BVER}}
+PATCH_BINUTILS_VER=${PATCH_BINUTILS_VER:-${PV}}
 PATCH_DEV=${PATCH_DEV:-slyfox}
 
 [[ -z ${PATCH_VER} ]] || SRC_URI="${SRC_URI}
@@ -64,31 +64,28 @@ RDEPEND="
 	>=sys-devel/binutils-config-3
 	sys-libs/zlib
 "
-DEPEND="${RDEPEND}
+DEPEND="${RDEPEND}"
+BDEPEND="
 	doc? ( sys-apps/texinfo )
 	test? ( dev-util/dejagnu )
 	nls? ( sys-devel/gettext )
 	sys-devel/flex
 	virtual/yacc
 "
-if is_cross ; then
-	# The build assumes the host has libiberty and such when cross-compiling
-	# its build tools.  We should probably make binutils itself build a local
-	# copy to use, but until then, be lazy.
-	DEPEND+=" >=sys-libs/binutils-libs-${PV}"
-fi
+
+RESTRICT="!test? ( test )"
 
 MY_BUILDDIR=${WORKDIR}/build
 
 src_unpack() {
 	case ${PV} in
-		9999)
-			git-r3_src_unpack;
+		*9999)
+			git-r3_src_unpack
 			;;
 		*)
-			default
 			;;
 	esac
+	default
 	mkdir -p "${MY_BUILDDIR}"
 }
 
@@ -139,21 +136,21 @@ toolchain-binutils_bugurl() {
 	printf "https://bugs.gentoo.org/"
 }
 toolchain-binutils_pkgversion() {
-	printf "Gentoo ${BVER}"
+	printf "Gentoo ${PV}"
 	[[ -n ${PATCH_VER} ]] && printf " p${PATCH_VER}"
 }
 
 src_configure() {
 	# Setup some paths
-	LIBPATH=/usr/$(get_libdir)/binutils/${CTARGET}/${BVER}
+	LIBPATH=/usr/$(get_libdir)/binutils/${CTARGET}/${PV}
 	INCPATH=${LIBPATH}/include
-	DATAPATH=/usr/share/binutils-data/${CTARGET}/${BVER}
+	DATAPATH=/usr/share/binutils-data/${CTARGET}/${PV}
 	if is_cross ; then
 		TOOLPATH=/usr/${CHOST}/${CTARGET}
 	else
 		TOOLPATH=/usr/${CTARGET}
 	fi
-	BINPATH=${TOOLPATH}/binutils-bin/${BVER}
+	BINPATH=${TOOLPATH}/binutils-bin/${PV}
 
 	# Make sure we filter $LINGUAS so that only ones that
 	# actually work make it through #42033
@@ -172,10 +169,15 @@ src_configure() {
 	cd "${MY_BUILDDIR}"
 	local myconf=()
 
-	# enable gold (installed as ld.gold) and ld's plugin architecture
-	if use cxx ; then
-		myconf+=( --enable-gold )
+	if use plugins ; then
 		myconf+=( --enable-plugins )
+	fi
+	# enable gold (installed as ld.gold) and ld's plugin architecture
+	if use gold ; then
+		myconf+=( --enable-gold )
+		if use default-gold; then
+			myconf+=( --enable-gold=default )
+		fi
 	fi
 
 	if use nls ; then
@@ -273,6 +275,10 @@ src_compile() {
 
 src_test() {
 	cd "${MY_BUILDDIR}"
+
+	# bug 637066
+	filter-flags -Wall -Wreturn-type
+
 	emake -k check
 }
 
@@ -288,7 +294,7 @@ src_install() {
 	# Newer versions of binutils get fancy with ${LIBPATH} #171905
 	cd "${ED}"/${LIBPATH}
 	for d in ../* ; do
-		[[ ${d} == ../${BVER} ]] && continue
+		[[ ${d} == ../${PV} ]] && continue
 		mv ${d}/* . || die
 		rmdir ${d} || die
 	done
@@ -319,7 +325,7 @@ src_install() {
 		objalloc.h
 		splay-tree.h
 	)
-	doins "${libiberty_headers[@]/#/${S}/include/}" || die
+	doins "${libiberty_headers[@]/#/${S}/include/}"
 	if [[ -d ${ED}/${LIBPATH}/lib ]] ; then
 		mv "${ED}"/${LIBPATH}/lib/* "${ED}"/${LIBPATH}/
 		rm -r "${ED}"/${LIBPATH}/lib
@@ -329,10 +335,10 @@ src_install() {
 	insinto /etc/env.d/binutils
 	cat <<-EOF > "${T}"/env.d
 		TARGET="${CTARGET}"
-		VER="${BVER}"
+		VER="${PV}"
 		LIBPATH="${EPREFIX}${LIBPATH}"
 	EOF
-	newins "${T}"/env.d ${CTARGET}-${BVER}
+	newins "${T}"/env.d ${CTARGET}-${PV}
 
 	# Handle documentation
 	if ! is_cross ; then
@@ -364,7 +370,7 @@ src_install() {
 pkg_postinst() {
 	# Make sure this ${CTARGET} has a binutils version selected
 	[[ -e ${EROOT}/etc/env.d/binutils/config-${CTARGET} ]] && return 0
-	binutils-config ${CTARGET}-${BVER}
+	binutils-config ${CTARGET}-${PV}
 }
 
 pkg_postrm() {
@@ -376,7 +382,7 @@ pkg_postrm() {
 	#       rerun binutils-config if this is a remerge, as
 	#       we want the mtimes on the symlinks updated (if
 	#       it is the same as the current selected profile)
-	if [[ ! -e ${EPREFIX}${BINPATH}/ld ]] && [[ ${current_profile} == ${CTARGET}-${BVER} ]] ; then
+	if [[ ! -e ${EPREFIX}${BINPATH}/ld ]] && [[ ${current_profile} == ${CTARGET}-${PV} ]] ; then
 		local choice=$(binutils-config -l | grep ${CTARGET} | awk '{print $2}')
 		choice=${choice//$'\n'/ }
 		choice=${choice/* }
@@ -385,8 +391,8 @@ pkg_postrm() {
 		else
 			binutils-config ${choice}
 		fi
-	elif [[ $(CHOST=${CTARGET} binutils-config -c) == ${CTARGET}-${BVER} ]] ; then
-		binutils-config ${CTARGET}-${BVER}
+	elif [[ $(CHOST=${CTARGET} binutils-config -c) == ${CTARGET}-${PV} ]] ; then
+		binutils-config ${CTARGET}-${PV}
 	fi
 }
 
@@ -416,4 +422,4 @@ pkg_postrm() {
 # - at build-time set scriptdir to point to symlinked location:
 #   ${TOOLPATH}: /usr/${CHOST} (or /usr/${CHOST}/${CTARGET} for cross-case)
 # - at install-time set scriptdir to point to slotted location:
-#   ${LIBPATH}: /usr/$(get_libdir)/binutils/${CTARGET}/${BVER}
+#   ${LIBPATH}: /usr/$(get_libdir)/binutils/${CTARGET}/${PV}
